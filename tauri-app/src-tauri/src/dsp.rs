@@ -154,7 +154,7 @@ impl BlueVoiceConfig {
 }
 
 pub struct BlueVoicePipeline {
-    sample_rate: u32,
+    _sample_rate: u32,
     pub config: BlueVoiceConfig,
     hpf_filter: Option<DirectForm1<f32>>,
     low_shelf: Option<DirectForm1<f32>>,
@@ -170,9 +170,9 @@ pub struct BlueVoicePipeline {
 }
 
 impl BlueVoicePipeline {
-    pub fn new(sample_rate: u32, config: BlueVoiceConfig) -> Self {
+    pub fn new(_sample_rate: u32, config: BlueVoiceConfig) -> Self {
         let mut pipeline = Self {
-            sample_rate,
+            _sample_rate,
             config: config.clone(),
             hpf_filter: None,
             low_shelf: None,
@@ -196,7 +196,7 @@ impl BlueVoicePipeline {
     }
 
     pub fn rebuild_filters(&mut self) {
-        let sr = self.sample_rate.hz();
+        let sr = self._sample_rate.hz();
         if self.config.high_pass_enabled {
             let coef = Coefficients::<f32>::from_params(Type::HighPass, sr, self.config.high_pass_hz.clamp(20.0, 400.0).hz(), Q_BUTTERWORTH_F32).unwrap();
             self.hpf_filter = Some(DirectForm1::<f32>::new(coef));
@@ -302,7 +302,7 @@ impl BlueVoicePipeline {
 }
 
 pub struct AudioEnvironmentClassifier {
-    sample_rate: u32,
+    _sample_rate: u32, // The underscore silences the unused variable warning
     window_samples: Vec<f32>,
     window_size: usize,
     pub current_mode: EnvironmentMode,
@@ -310,10 +310,10 @@ pub struct AudioEnvironmentClassifier {
 }
 
 impl AudioEnvironmentClassifier {
-    pub fn new(sample_rate: u32) -> Self {
-        let window_size = (sample_rate as f32 * 0.5) as usize;
+    pub fn new(_sample_rate: u32) -> Self {
+        let window_size = (_sample_rate as f32 * 0.5) as usize;
         Self {
-            sample_rate,
+            _sample_rate,
             window_samples: Vec::with_capacity(window_size),
             window_size,
             current_mode: EnvironmentMode::QuietStudio,

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { motion } from 'framer-motion';
-import { Mic, Settings2, Activity, SlidersHorizontal, AudioWaveform, Headphones, Layers, Moon, Radio, ShieldAlert, Coffee, ZapOff } from 'lucide-react';
+import { Mic, MicOff, Settings2, Activity, SlidersHorizontal, AudioWaveform, Headphones, Layers, Moon, Radio, ShieldAlert, Coffee, ZapOff } from 'lucide-react';
 
 const Slider = ({ label, value, min, max, step, unit, onChange }: any) => (
   <div className="mb-3">
@@ -33,6 +33,7 @@ export default function LogiumWidget() {
     auto_mode: true,
     environment: 'QuietStudio',
     monitor_enabled: false,
+    mic_muted: false,
   });
 
   const [config, setConfig] = useState({
@@ -45,7 +46,13 @@ export default function LogiumWidget() {
   useEffect(() => {
     const interval = setInterval(async () => {
       const liveStatus: any = await invoke('get_live_status');
-      setStatus(s => ({ ...s, auto_mode: liveStatus.auto_mode, environment: liveStatus.environment, monitor_enabled: liveStatus.monitor_enabled }));
+      setStatus(s => ({ 
+        ...s, 
+        auto_mode: liveStatus.auto_mode, 
+        environment: liveStatus.environment, 
+        monitor_enabled: liveStatus.monitor_enabled,
+        mic_muted: liveStatus.mic_muted 
+      }));
     }, 500);
     return () => clearInterval(interval);
   }, []);
@@ -60,6 +67,12 @@ export default function LogiumWidget() {
     const nextState = !status.monitor_enabled;
     await invoke('toggle_monitor', { enable: nextState });
     setStatus(prev => ({ ...prev, monitor_enabled: nextState }));
+  };
+
+  const toggleMute = async () => {
+    const nextState = !status.mic_muted;
+    await invoke('toggle_mute', { mute: nextState });
+    setStatus(prev => ({ ...prev, mic_muted: nextState }));
   };
 
   const updateConfig = (key: string, value: number) => {
@@ -82,16 +95,29 @@ export default function LogiumWidget() {
         className="bg-zinc-950 text-zinc-200 p-4 border border-zinc-800 flex flex-col rounded-xl font-sans select-none overflow-hidden shadow-2xl"
       >
         
-        {/* Header */}
+        {/* Header with Mute controls */}
         <div className="flex items-center justify-between mb-4 pb-4 border-b border-zinc-800/80 shrink-0">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center">
-              <Mic size={16} className="text-indigo-400" />
+            {/* Dynamic App Logo shifts to Red when muted */}
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${status.mic_muted ? 'bg-red-500/20' : 'bg-indigo-500/20'}`}>
+              {status.mic_muted ? <MicOff size={16} className="text-red-400" /> : <Mic size={16} className="text-indigo-400" />}
             </div>
             <h1 className="text-lg font-black tracking-tight text-white uppercase">Logium</h1>
           </div>
+          
           <div className="flex items-center gap-1">
-            <button onClick={toggleMonitor} className={`p-2 rounded-lg transition-colors ${status.monitor_enabled ? 'text-indigo-400 bg-indigo-500/10' : 'text-zinc-600 hover:text-zinc-400'}`}>
+            <button 
+              onClick={toggleMute}
+              title={status.mic_muted ? "Unmute Microphone" : "Mute Microphone"}
+              className={`p-2 rounded-lg transition-colors ${status.mic_muted ? 'text-red-400 bg-red-500/10' : 'text-zinc-600 hover:text-red-400'}`}
+            >
+              {status.mic_muted ? <MicOff size={18} /> : <Mic size={18} />}
+            </button>
+            <button 
+              onClick={toggleMonitor}
+              title="Toggle Live Monitoring"
+              className={`p-2 rounded-lg transition-colors ${status.monitor_enabled ? 'text-indigo-400 bg-indigo-500/10' : 'text-zinc-600 hover:text-zinc-400'}`}
+            >
               <Headphones size={18} />
             </button>
             <button className="p-2 text-zinc-500 hover:text-white transition-colors">
@@ -114,7 +140,6 @@ export default function LogiumWidget() {
           ) : (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col h-full">
               
-              {/* Modern Capsule Tab Bar */}
               <div className="flex gap-1 mb-4 shrink-0 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800/80">
                 <button onClick={() => setActiveTab('PRESETS')} className={`flex-1 py-1.5 text-[9px] font-bold uppercase tracking-widest rounded-lg flex flex-col items-center justify-center gap-1 transition-all ${activeTab === 'PRESETS' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}>
                   <Layers size={14} /> Presets
@@ -127,7 +152,6 @@ export default function LogiumWidget() {
                 </button>
               </div>
 
-              {/* Presets Grid */}
               {activeTab === 'PRESETS' && (
                 <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="grid grid-cols-2 gap-2 flex-1 mt-1">
                   {PRESETS.map(p => (
@@ -146,7 +170,6 @@ export default function LogiumWidget() {
                 </motion.div>
               )}
 
-              {/* Sliders Area */}
               {activeTab === 'EQ' && (
                 <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="flex-1 mt-1">
                   <Slider label="Input Gain" value={config.input_gain} min={0} max={200} step={1} unit="%" onChange={(v: number) => updateConfig('input_gain', v)} />

@@ -12,8 +12,40 @@ struct AppState {
     pub is_auto_mode: Arc<Mutex<bool>>,
     pub current_environment: Arc<Mutex<String>>,
     pub dsp_pipeline: Arc<Mutex<BlueVoicePipeline>>,
-    pub is_monitor_enabled: Arc<Mutex<bool>>, // Added Monitoring State
+    pub is_monitor_enabled: Arc<Mutex<bool>>,
+    pub is_mic_muted: Arc<Mutex<bool>>, // NEW: Mute State
 }
+
+#[tauri::command]
+fn get_live_status(state: tauri::State<AppState>) -> serde_json::Value {
+    let auto = *state.is_auto_mode.lock().unwrap();
+    let env = state.current_environment.lock().unwrap().clone();
+    let monitor = *state.is_monitor_enabled.lock().unwrap();
+    let muted = *state.is_mic_muted.lock().unwrap();
+    
+    serde_json::json!({
+        "auto_mode": auto,
+        "environment": env,
+        "monitor_enabled": monitor,
+        "mic_muted": muted
+    })
+}
+
+#[tauri::command]
+fn toggle_auto_mode(state: tauri::State<AppState>, enable: bool) {
+    *state.is_auto_mode.lock().unwrap() = enable;
+}
+
+#[tauri::command]
+fn toggle_monitor(state: tauri::State<AppState>, enable: bool) {
+    *state.is_monitor_enabled.lock().unwrap() = enable;
+}
+
+#[tauri::command]
+fn toggle_mute(state: tauri::State<AppState>, mute: bool) {
+    *state.is_mic_muted.lock().unwrap() = mute;
+}
+
 #[tauri::command]
 fn set_manual_preset(state: tauri::State<AppState>, scene: String) -> serde_json::Value {
     let mode = match scene.as_str() {
@@ -30,7 +62,6 @@ fn set_manual_preset(state: tauri::State<AppState>, scene: String) -> serde_json
     state.dsp_pipeline.lock().unwrap().update_config(new_cfg.clone());
     *state.current_environment.lock().unwrap() = scene.clone();
 
-    // Return the specific values so the React sliders update instantly
     serde_json::json!({
         "input_gain": new_cfg.input_gain * 100.0,
         "high_pass_hz": new_cfg.high_pass_hz,
@@ -42,29 +73,6 @@ fn set_manual_preset(state: tauri::State<AppState>, scene: String) -> serde_json
         "compressor_threshold_db": new_cfg.compressor_threshold_db,
         "limiter_threshold_db": new_cfg.limiter_threshold_db,
     })
-}
-
-#[tauri::command]
-fn get_live_status(state: tauri::State<AppState>) -> serde_json::Value {
-    let auto = *state.is_auto_mode.lock().unwrap();
-    let env = state.current_environment.lock().unwrap().clone();
-    let monitor = *state.is_monitor_enabled.lock().unwrap();
-    
-    serde_json::json!({
-        "auto_mode": auto,
-        "environment": env,
-        "monitor_enabled": monitor
-    })
-}
-
-#[tauri::command]
-fn toggle_auto_mode(state: tauri::State<AppState>, enable: bool) {
-    *state.is_auto_mode.lock().unwrap() = enable;
-}
-
-#[tauri::command]
-fn toggle_monitor(state: tauri::State<AppState>, enable: bool) {
-    *state.is_monitor_enabled.lock().unwrap() = enable;
 }
 
 #[tauri::command]
@@ -97,18 +105,26 @@ fn main() {
         is_auto_mode: Arc::new(Mutex::new(true)),
         current_environment: Arc::new(Mutex::new("QuietStudio".to_string())),
         dsp_pipeline: Arc::clone(&pipeline),
-        is_monitor_enabled: Arc::new(Mutex::new(false)), // Defaults to OFF
+        is_monitor_enabled: Arc::new(Mutex::new(false)),
+        is_mic_muted: Arc::new(Mutex::new(false)), // Default to unmuted
     };
 
     let thread_auto_mode = Arc::clone(&app_state.is_auto_mode);
     let thread_env = Arc::clone(&app_state.current_environment);
     let thread_pipeline = Arc::clone(&pipeline);
     let thread_monitor = Arc::clone(&app_state.is_monitor_enabled);
+    let thread_muted = Arc::clone(&app_state.is_mic_muted); // Clone for audio thread
 
     tauri::Builder::default()
         .manage(app_state)
-        // Ensure the new toggle_monitor handler is registered
-        .invoke_handler(tauri::generate_handler![get_live_status, toggle_auto_mode, update_dsp_param, toggle_monitor, set_manual_preset])
+        .invoke_handler(tauri::generate_handler![
+            get_live_status, 
+            toggle_auto_mode, 
+            update_dsp_param, 
+            toggle_monitor, 
+            set_manual_preset,
+            toggle_mute // Register new command
+        ])
         .setup(move |app| {
             TrayIconBuilder::new()
                 .tooltip("Logium")
@@ -154,6 +170,7 @@ fn main() {
                         let mut pipe = thread_pipeline.lock().unwrap();
                         let mut class = class_capture.lock().unwrap();
                         let is_auto = *thread_auto_mode.lock().unwrap();
+                        let is_muted = *thread_muted.lock().unwrap();
 
                         for &sample in data {
                             if is_auto {
@@ -170,7 +187,10 @@ fn main() {
                                 }
                             }
                             let processed = pipe.process_sample(sample);
-                            let _ = tx.try_send(processed);
+                            
+                            // Apply the mute multiplier right before sending to output
+                            let final_output = if is_muted { 0.0 } else { processed };
+                            let _ = tx.try_send(final_output);
                         }
                     },
                     |err| eprintln!("Input stream error: {}", err),
