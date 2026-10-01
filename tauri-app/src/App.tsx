@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { motion } from 'framer-motion';
-import { Mic, MicOff, Settings2, Activity, SlidersHorizontal, AudioWaveform, Headphones, Layers, Moon, Radio, ShieldAlert, Coffee, ZapOff } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Mic, MicOff, Settings2, Activity, SlidersHorizontal, AudioWaveform, Headphones, Layers, Moon, Radio, ShieldAlert, Coffee, ZapOff, RotateCcw, Power } from 'lucide-react';
 
 const Slider = ({ label, value, min, max, step, unit, onChange }: any) => (
   <div className="mb-3">
@@ -42,6 +42,7 @@ export default function LogiumWidget() {
   });
 
   const [activeTab, setActiveTab] = useState<'PRESETS' | 'EQ' | 'CLEANUP'>('PRESETS');
+  const [showSettings, setShowSettings] = useState(false); // NEW: Settings Overlay State
 
   useEffect(() => {
     const interval = setInterval(async () => {
@@ -87,20 +88,19 @@ export default function LogiumWidget() {
   };
 
   return (
-    <div className="h-screen w-screen bg-transparent flex flex-col justify-end p-2 pb-4">
+    <div className="h-screen w-screen bg-transparent flex flex-col justify-end p-2 pb-4 relative">
       <motion.div 
         initial={false}
         animate={{ height: status.auto_mode ? 360 : 620 }}
         transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-        className="bg-zinc-950 text-zinc-200 p-4 border border-zinc-800 flex flex-col rounded-xl font-sans select-none overflow-hidden shadow-2xl"
+        className="bg-zinc-950 text-zinc-200 p-4 border border-zinc-800 flex flex-col rounded-xl font-sans select-none overflow-hidden shadow-2xl relative"
       >
         
-        {/* Header with Mute controls */}
+        {/* Header */}
         <div className="flex items-center justify-between mb-4 pb-4 border-b border-zinc-800/80 shrink-0">
           <div className="flex items-center gap-2">
-            {/* Dynamic App Logo shifts to Red when muted */}
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${status.mic_muted ? 'bg-red-500/20' : 'bg-indigo-500/20'}`}>
-              {status.mic_muted ? <MicOff size={16} className="text-red-400" /> : <Mic size={16} className="text-indigo-400" />}
+            <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center">
+              <Mic size={16} className="text-indigo-400" />
             </div>
             <h1 className="text-lg font-black tracking-tight text-white uppercase">Logium</h1>
           </div>
@@ -120,11 +120,53 @@ export default function LogiumWidget() {
             >
               <Headphones size={18} />
             </button>
-            <button className="p-2 text-zinc-500 hover:text-white transition-colors">
+            
+            {/* NEW: Settings Toggle */}
+            <button 
+              onClick={() => setShowSettings(!showSettings)}
+              className={`p-2 rounded-lg transition-colors ${showSettings ? 'text-white bg-zinc-800' : 'text-zinc-500 hover:text-white'}`}
+            >
               <Settings2 size={18} />
             </button>
           </div>
         </div>
+
+        {/* NEW: Settings Overlay Panel */}
+        <AnimatePresence>
+          {showSettings && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="absolute inset-x-4 top-20 bottom-4 bg-zinc-950/95 backdrop-blur-md z-50 rounded-xl border border-zinc-800 shadow-2xl p-6 flex flex-col"
+            >
+              <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-6">System Preferences</h3>
+              
+              <div className="space-y-3">
+                <button 
+                  onClick={() => { applyPreset(status.environment); setShowSettings(false); }} 
+                  className="w-full flex items-center justify-between px-4 py-3 bg-zinc-900 hover:bg-zinc-800 rounded-lg text-sm font-medium text-zinc-200 transition-colors border border-zinc-800/80"
+                >
+                  Reset Current Preset
+                  <RotateCcw size={14} className="text-zinc-500" />
+                </button>
+                
+                <button 
+                  onClick={() => invoke('quit_app')} 
+                  className="w-full flex items-center justify-between px-4 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-sm font-medium transition-colors border border-red-500/20"
+                >
+                  Quit Logium
+                  <Power size={14} />
+                </button>
+              </div>
+
+              <div className="mt-auto text-center pb-2">
+                <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">Logium v0.1.0</p>
+                <p className="text-[9px] text-zinc-700 mt-1">Rust DSP Engine Active</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Content Area */}
         <div className="flex-1 flex flex-col min-h-0 mb-4">

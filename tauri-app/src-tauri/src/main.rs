@@ -1,9 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod dsp;
 
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, PhysicalPosition};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
+use tauri::menu::{Menu, MenuItem}; // NEW: Menu Imports
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleRate, StreamConfig};
 use dsp::{AudioEnvironmentClassifier, BlueVoiceConfig, BlueVoicePipeline, EnvironmentMode};
@@ -44,6 +46,12 @@ fn toggle_monitor(state: tauri::State<AppState>, enable: bool) {
 #[tauri::command]
 fn toggle_mute(state: tauri::State<AppState>, mute: bool) {
     *state.is_mic_muted.lock().unwrap() = mute;
+}
+
+// NEW: Command to let the frontend kill the app
+#[tauri::command]
+fn quit_app() {
+    std::process::exit(0);
 }
 
 #[tauri::command]
@@ -123,12 +131,23 @@ fn main() {
             update_dsp_param, 
             toggle_monitor, 
             set_manual_preset,
-            toggle_mute // Register new command
+            toggle_mute,
+            quit_app // NEW
         ])
         .setup(move |app| {
+            // NEW: Build the Right-Click Context Menu
+            let quit_i = MenuItem::with_id(app, "quit", "Quit Logium", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&quit_i])?;
+
             TrayIconBuilder::new()
                 .tooltip("Logium")
                 .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu) // Attach the menu
+                .on_menu_event(|_app, event| {
+                    if event.id.as_ref() == "quit" {
+                        std::process::exit(0);
+                    }
+                })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { position, button, button_state, .. } = event {
                         if button == MouseButton::Left && button_state == MouseButtonState::Up {
@@ -173,6 +192,11 @@ fn main() {
                         let is_muted = *thread_muted.lock().unwrap();
 
                         for &sample in data {
+                            if is_muted {
+                                let _ = tx.try_send(0.0);
+                                continue; 
+                            }
+                            
                             if is_auto {
                                 if let Some(new_mode) = class.feed(sample) {
                                     pipe.update_config(BlueVoiceConfig::for_mode(new_mode));
@@ -181,16 +205,14 @@ fn main() {
                                         EnvironmentMode::NoisyEnvironment => "NoisyEnvironment",
                                         EnvironmentMode::QuietStudio => "QuietStudio",
                                         EnvironmentMode::LateNight => "LateNight",
-                                        _ => "QuietStudio"
+                                        _ => "QuietStudio",
                                     };
                                     *thread_env.lock().unwrap() = mode_str.to_string();
                                 }
                             }
-                            let processed = pipe.process_sample(sample);
                             
-                            // Apply the mute multiplier right before sending to output
-                            let final_output = if is_muted { 0.0 } else { processed };
-                            let _ = tx.try_send(final_output);
+                            let processed = pipe.process_sample(sample);
+                            let _ = tx.try_send(processed);
                         }
                     },
                     |err| eprintln!("Input stream error: {}", err),
