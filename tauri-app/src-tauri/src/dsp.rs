@@ -5,6 +5,9 @@ pub enum EnvironmentMode {
     VoiceFocused,
     NoisyEnvironment,
     QuietStudio,
+    LateNight,   // NEW: Whisper optimized
+    PodcastPro,  // NEW: Deep broadcast tone (Manual only)
+    RawBypass,   // NEW: Unprocessed (Manual only)
 }
 
 #[derive(Clone, Debug)]
@@ -63,7 +66,6 @@ impl Default for BlueVoiceConfig {
         }
     }
 }
-
 impl BlueVoiceConfig {
     pub fn for_mode(mode: EnvironmentMode) -> Self {
         let mut cfg = Self::default();
@@ -105,6 +107,46 @@ impl BlueVoiceConfig {
                 cfg.gate_threshold_db = -65.0;
                 cfg.compressor_enabled = true;
                 cfg.compressor_threshold_db = -15.0;
+            }
+            EnvironmentMode::LateNight => {
+                cfg.input_gain = 1.5; // +50% gain to pick up whispers
+                cfg.high_pass_hz = 60.0;
+                cfg.voice_eq_enabled = true;
+                cfg.eq_low_db = 2.0;
+                cfg.eq_mid_db = 0.0;
+                cfg.eq_high_db = 1.0;
+                cfg.noise_reduction_enabled = true;
+                cfg.noise_reduction_amount_db = 20.0;
+                cfg.gate_enabled = true;
+                cfg.gate_threshold_db = -55.0;
+                cfg.compressor_enabled = true;
+                cfg.compressor_threshold_db = -25.0; // Heavy compression to level out whispers
+                cfg.limiter_threshold_db = 0.0;
+            }
+            EnvironmentMode::PodcastPro => {
+                cfg.high_pass_hz = 90.0;
+                cfg.voice_eq_enabled = true;
+                cfg.eq_low_db = 3.5;  // Deep radio bass
+                cfg.eq_mid_db = -1.0; // Scoop boxy mids
+                cfg.eq_high_db = 4.5; // Crisp articulation
+                cfg.noise_reduction_enabled = true;
+                cfg.noise_reduction_amount_db = 15.0;
+                cfg.gate_enabled = true;
+                cfg.gate_threshold_db = -45.0;
+                cfg.compressor_enabled = true;
+                cfg.compressor_threshold_db = -18.0; 
+                cfg.limiter_threshold_db = 2.0;
+            }
+            EnvironmentMode::RawBypass => {
+                cfg.input_gain = 1.0;
+                cfg.high_pass_enabled = false;
+                cfg.voice_eq_enabled = false;
+                cfg.noise_reduction_enabled = false;
+                cfg.gate_enabled = false;
+                cfg.compressor_enabled = false;
+                cfg.de_esser_enabled = false;
+                cfg.de_popper_enabled = false;
+                cfg.limiter_enabled = false;
             }
         }
         cfg
@@ -321,6 +363,9 @@ impl AudioEnvironmentClassifier {
             EnvironmentMode::VoiceFocused
         } else if rms_db > -44.0 && zcr >= 0.12 {
             EnvironmentMode::NoisyEnvironment
+        } else if rms_db <= -35.0 && rms_db > -55.0 && zcr < 0.18 {
+            // Low volume but vocal ZCR = Whispering
+            EnvironmentMode::LateNight
         } else {
             EnvironmentMode::QuietStudio
         }

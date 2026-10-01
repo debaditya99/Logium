@@ -1,3 +1,4 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod dsp;
 
 use std::sync::{Arc, Mutex};
@@ -12,6 +13,35 @@ struct AppState {
     pub current_environment: Arc<Mutex<String>>,
     pub dsp_pipeline: Arc<Mutex<BlueVoicePipeline>>,
     pub is_monitor_enabled: Arc<Mutex<bool>>, // Added Monitoring State
+}
+#[tauri::command]
+fn set_manual_preset(state: tauri::State<AppState>, scene: String) -> serde_json::Value {
+    let mode = match scene.as_str() {
+        "VoiceFocused" => EnvironmentMode::VoiceFocused,
+        "NoisyEnvironment" => EnvironmentMode::NoisyEnvironment,
+        "QuietStudio" => EnvironmentMode::QuietStudio,
+        "LateNight" => EnvironmentMode::LateNight,
+        "PodcastPro" => EnvironmentMode::PodcastPro,
+        "RawBypass" => EnvironmentMode::RawBypass,
+        _ => EnvironmentMode::QuietStudio,
+    };
+    
+    let new_cfg = BlueVoiceConfig::for_mode(mode);
+    state.dsp_pipeline.lock().unwrap().update_config(new_cfg.clone());
+    *state.current_environment.lock().unwrap() = scene.clone();
+
+    // Return the specific values so the React sliders update instantly
+    serde_json::json!({
+        "input_gain": new_cfg.input_gain * 100.0,
+        "high_pass_hz": new_cfg.high_pass_hz,
+        "eq_low_db": new_cfg.eq_low_db,
+        "eq_mid_db": new_cfg.eq_mid_db,
+        "eq_high_db": new_cfg.eq_high_db,
+        "noise_reduction_db": new_cfg.noise_reduction_amount_db,
+        "gate_threshold_db": new_cfg.gate_threshold_db,
+        "compressor_threshold_db": new_cfg.compressor_threshold_db,
+        "limiter_threshold_db": new_cfg.limiter_threshold_db,
+    })
 }
 
 #[tauri::command]
@@ -78,7 +108,7 @@ fn main() {
     tauri::Builder::default()
         .manage(app_state)
         // Ensure the new toggle_monitor handler is registered
-        .invoke_handler(tauri::generate_handler![get_live_status, toggle_auto_mode, update_dsp_param, toggle_monitor])
+        .invoke_handler(tauri::generate_handler![get_live_status, toggle_auto_mode, update_dsp_param, toggle_monitor, set_manual_preset])
         .setup(move |app| {
             TrayIconBuilder::new()
                 .tooltip("Logium")
@@ -133,6 +163,8 @@ fn main() {
                                         EnvironmentMode::VoiceFocused => "VoiceFocused",
                                         EnvironmentMode::NoisyEnvironment => "NoisyEnvironment",
                                         EnvironmentMode::QuietStudio => "QuietStudio",
+                                        EnvironmentMode::LateNight => "LateNight",
+                                        _ => "QuietStudio"
                                     };
                                     *thread_env.lock().unwrap() = mode_str.to_string();
                                 }
